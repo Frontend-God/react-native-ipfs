@@ -1,8 +1,8 @@
 # Desocial Media 0X21 APP
 
-## Demo
+<!-- ## Demo
 
-https://github.com/galaxy-foundation/desocial_media.git
+https://github.com/galaxy-foundation/desocial_media.git -->
 
 ## How to use?
 
@@ -25,11 +25,11 @@ yarn install
 ```
 
 
-## Support
+<!-- ## Support
 
 In case of any questions or problems, please contact me at:
 [galaxy126a@gmail.com](mailto:galaxy126a@gmail.com)
 
 ### Happy Coding 🚀
 
-### [Galaxy.foundation](https://galaxy.foundation/)
+### [Galaxy.foundation](https://galaxy.foundation/) -->
