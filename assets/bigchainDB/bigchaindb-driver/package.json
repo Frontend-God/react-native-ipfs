@@ -1,0 +1,143 @@
+{
+  "name": "bigchaindb-driver",
+  "version": "4.2.2",
+  "description": "Node.js driver for BigchainDB",
+  "homepage": "https://www.bigchaindb.com/",
+  "bugs": "https://github.com/bigchaindb/js-bigchaindb-driver/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bigchaindb/js-bigchaindb-driver.git"
+  },
+  "license": "Apache-2.0",
+  "author": "BigchainDB",
+  "files": [
+    "dist",
+    "types"
+  ],
+  "main": "./dist/node/index.js",
+  "browser": "./dist/browser/bigchaindb-driver.cjs2.min.js",
+  "types": "./types/index.d.ts",
+  "sideEffects": false,
+  "scripts": {
+    "lint": "eslint .",
+    "build": "npm run clean && npm run build:cjs && npm run build:dist",
+    "build:bundle": "webpack",
+    "build:cjs": "cross-env BABEL_ENV=cjs babel ./src -d dist/node",
+    "build:dist": "cross-env NODE_ENV=production webpack",
+    "dev": "webpack -w",
+    "clean": "rimraf dist/bundle dist/browser dist/node",
+    "test": "npm run lint && nyc ava && npm run report-coverage",
+    "thanks": "cowsay Hi, thanks for your interest in BigchainDB. We appreciate your contribution!",
+    "release": "read -p 'GITHUB_TOKEN: ' GITHUB_TOKEN && export GITHUB_TOKEN=$GITHUB_TOKEN && release-it --src.tagName='v%s'",
+    "release-minor": "release-it minor --non-interactive",
+    "release-major": "release-it major --non-interactive",
+    "prepublishOnly": "npm run build",
+    "report-coverage": "nyc report --reporter=lcov > coverage.lcov && codecov",
+    "doc": "documentation build src/index.js -f md -o API.md -g --markdown-toc"
+  },
+  "devDependencies": {
+    "@ava/babel": "^1.0.1",
+    "@babel/cli": "^7.13.0",
+    "@babel/core": "^7.13.8",
+    "@babel/eslint-parser": "^7.13.8",
+    "@babel/plugin-proposal-export-default-from": "^7.12.13",
+    "@babel/plugin-proposal-object-rest-spread": "^7.13.8",
+    "@babel/plugin-syntax-async-generators": "^7.8.4",
+    "@babel/plugin-transform-async-to-generator": "^7.13.0",
+    "@babel/plugin-transform-object-assign": "^7.12.13",
+    "@babel/plugin-transform-regenerator": "^7.12.13",
+    "@babel/plugin-transform-runtime": "^7.13.9",
+    "@babel/preset-env": "^7.13.9",
+    "@babel/register": "^7.13.8",
+    "ava": "^3.15.0",
+    "babel-loader": "^8.2.2",
+    "codecov": "^3.8.1",
+    "cross-env": "^7.0.3",
+    "documentation": "^13.1.1",
+    "eslint": "^7.21.0",
+    "eslint-config-airbnb-base": "^14.2.1",
+    "eslint-plugin-import": "^2.22.1",
+    "husky": "^5.1.3",
+    "lint-staged": "^10.5.4",
+    "nyc": "^15.1.0",
+    "release-it": "^14.4.1",
+    "rewire": "^4.0.1",
+    "rimraf": "^3.0.2",
+    "sinon": "^7.3.2",
+    "terser-webpack-plugin": "^4.2.3",
+    "webpack": "^4.46.0",
+    "webpack-cli": "^4.5.0",
+    "webpack-concat-plugin": "^3.0.0",
+    "webpack-merge": "^5.7.3",
+    "webpack-sources": "^2.2.0"
+  },
+  "dependencies": {
+    "@babel/runtime-corejs3": "^7.13.9",
+    "browser-resolve": "^1.11.3",
+    "bs58": "^4.0.1",
+    "buffer": "^6.0.3",
+    "clone": "^2.1.2",
+    "core-js": "^3.9.1",
+    "crypto-conditions": "2.1.2",
+    "decamelize": "^5.0.0",
+    "es6-promise": "^4.2.8",
+    "fetch-ponyfill": "^7.1.0",
+    "js-sha3": "^0.8.0",
+    "json-stable-stringify": "^1.0.1",
+    "query-string": "^6.14.1",
+    "sprintf-js": "^1.1.2",
+    "tweetnacl": "^1.0.3"
+  },
+  "keywords": [
+    "bigchaindb",
+    "driver",
+    "blockchain",
+    "decentralized",
+    "dapp"
+  ],
+  "lint-staged": {
+    "*.js": [
+      "eslint"
+    ]
+  },
+  "ava": {
+    "files": [
+      "test/**/*.js",
+      "!test/constants.js"
+    ],
+    "source": [
+      "**/*.{js,jsx}",
+      "!node_modules/**/*",
+      "!dist/**/*"
+    ],
+    "failFast": true,
+    "failWithoutAssertions": false,
+    "tap": true,
+    "powerAssert": false,
+    "require": [
+      "@babel/register"
+    ],
+    "babel": true
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "release-it": {
+    "github": {
+      "release": true
+    },
+    "git": {
+      "tagName": "v${version}"
+    },
+    "hooks": {
+      "before:init": [
+        "npm run test"
+      ]
+    },
+    "npm": {
+      "publish": true
+    }
+  }
+}

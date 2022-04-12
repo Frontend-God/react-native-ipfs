@@ -1,0 +1,326 @@
+"use strict";
+
+var _Object$defineProperty = require("@babel/runtime-corejs3/core-js-stable/object/define-property");
+
+var _interopRequireDefault = require("@babel/runtime-corejs3/helpers/interopRequireDefault");
+
+_Object$defineProperty(exports, "__esModule", {
+  value: true
+});
+
+exports.default = void 0;
+
+var _map = _interopRequireDefault(require("@babel/runtime-corejs3/core-js-stable/instance/map"));
+
+var _includes = _interopRequireDefault(require("@babel/runtime-corejs3/core-js-stable/instance/includes"));
+
+var _forEach = _interopRequireDefault(require("@babel/runtime-corejs3/core-js-stable/instance/for-each"));
+
+var _concat = _interopRequireDefault(require("@babel/runtime-corejs3/core-js-stable/instance/concat"));
+
+var _promise = _interopRequireDefault(require("@babel/runtime-corejs3/core-js-stable/promise"));
+
+var _buffer = require("buffer");
+
+var _jsonStableStringify = _interopRequireDefault(require("json-stable-stringify"));
+
+var _clone = _interopRequireDefault(require("clone"));
+
+var _bs = _interopRequireDefault(require("bs58"));
+
+var _cryptoConditions = require("crypto-conditions");
+
+var _ccJsonify = _interopRequireDefault(require("./utils/ccJsonify"));
+
+var _sha256Hash = _interopRequireDefault(require("./sha256Hash"));
+
+// Copyright BigchainDB GmbH and BigchainDB contributors
+// SPDX-License-Identifier: (Apache-2.0 AND CC-BY-4.0)
+// Code is Apache-2.0 and docs are CC-BY-4.0
+
+/**
+ * Construct Transactions
+ */
+class Transaction {
+  /**
+   * Canonically serializes a transaction into a string by sorting the keys
+   * @param {Object} (transaction)
+   * @return {string} a canonically serialized Transaction
+   */
+  static serializeTransactionIntoCanonicalString(transaction) {
+    // BigchainDB signs fulfillments by serializing transactions into a
+    // "canonical" format where
+    const tx = (0, _clone.default)(transaction); // TODO: set fulfillments to null
+    // Sort the keys
+
+    return (0, _jsonStableStringify.default)(tx, (a, b) => a.key > b.key ? 1 : -1);
+  }
+
+  static makeInputTemplate(publicKeys = [], fulfills = null, fulfillment = null) {
+    return {
+      fulfillment,
+      fulfills,
+      'owners_before': publicKeys
+    };
+  }
+
+  static makeTransactionTemplate() {
+    const txTemplate = {
+      id: null,
+      operation: null,
+      outputs: [],
+      inputs: [],
+      metadata: null,
+      asset: null,
+      version: '2.0'
+    };
+    return txTemplate;
+  }
+
+  static makeTransaction(operation, asset, metadata = null, outputs = [], inputs = []) {
+    const tx = Transaction.makeTransactionTemplate();
+    tx.operation = operation;
+    tx.asset = asset;
+    tx.metadata = metadata;
+    tx.inputs = inputs;
+    tx.outputs = outputs;
+    return tx;
+  }
+  /**
+   * Generate a `CREATE` transaction holding the `asset`, `metadata`, and `outputs`, to be signed by
+   * the `issuers`.
+   * @param {Object} asset Created asset's data
+   * @param {Object} metadata Metadata for the Transaction
+   * @param {Object[]} outputs Array of Output objects to add to the Transaction.
+   *                           Think of these as the recipients of the asset after the transaction.
+   *                           For `CREATE` Transactions, this should usually just be a list of
+   *                           Outputs wrapping Ed25519 Conditions generated from the issuers' public
+   *                           keys (so that the issuers are the recipients of the created asset).
+   * @param {...string[]} issuers Public key of one or more issuers to the asset being created by this
+   *                              Transaction.
+   *                              Note: Each of the private keys corresponding to the given public
+   *                              keys MUST be used later (and in the same order) when signing the
+   *                              Transaction (`signTransaction()`).
+   * @returns {Object} Unsigned transaction -- make sure to call signTransaction() on it before
+   *                   sending it off!
+   */
+
+
+  static makeCreateTransaction(asset, metadata, outputs, ...issuers) {
+    const assetDefinition = {
+      data: asset || null
+    };
+    const inputs = (0, _map.default)(issuers).call(issuers, issuer => Transaction.makeInputTemplate([issuer]));
+    return Transaction.makeTransaction('CREATE', assetDefinition, metadata, outputs, inputs);
+  }
+  /**
+   * Create an Ed25519 Cryptocondition from an Ed25519 public key
+   * to put into an Output of a Transaction
+   * @param {string} publicKey base58 encoded Ed25519 public key for the recipient of the Transaction
+   * @param {boolean} [json=true] If true returns a json object otherwise a crypto-condition type
+   * @returns {Object} Ed25519 Condition (that will need to wrapped in an Output)
+   */
+
+
+  static makeEd25519Condition(publicKey, json = true) {
+    const publicKeyBuffer = _bs.default.decode(publicKey);
+
+    const ed25519Fulfillment = new _cryptoConditions.Ed25519Sha256();
+    ed25519Fulfillment.setPublicKey(publicKeyBuffer);
+    return json ? (0, _ccJsonify.default)(ed25519Fulfillment) : ed25519Fulfillment;
+  }
+  /**
+   * Create an Output from a Condition.
+   * Note: Assumes the given Condition was generated from a
+   * single public key (e.g. a Ed25519 Condition)
+   * @param {Object} condition Condition (e.g. a Ed25519 Condition from `makeEd25519Condition()`)
+   * @param {string} amount Amount of the output
+   * @returns {Object} An Output usable in a Transaction
+   */
+
+
+  static makeOutput(condition, amount = '1') {
+    if (typeof amount !== 'string') {
+      throw new TypeError('`amount` must be of type string');
+    }
+
+    const publicKeys = [];
+
+    const getPublicKeys = details => {
+      if (details.type === 'ed25519-sha-256') {
+        if (!(0, _includes.default)(publicKeys).call(publicKeys, details.public_key)) {
+          publicKeys.push(details.public_key);
+        }
+      } else if (details.type === 'threshold-sha-256') {
+        var _context;
+
+        (0, _map.default)(_context = details.subconditions).call(_context, getPublicKeys);
+      }
+    };
+
+    getPublicKeys(condition.details);
+    return {
+      condition,
+      amount,
+      public_keys: publicKeys
+    };
+  }
+  /**
+   * Create a Preimage-Sha256 Cryptocondition from a secret to put into an Output of a Transaction
+   * @param {string} preimage Preimage to be hashed and wrapped in a crypto-condition
+   * @param {boolean} [json=true] If true returns a json object otherwise a crypto-condition type
+   * @returns {Object} Preimage-Sha256 Condition (that will need to wrapped in an Output)
+   */
+
+
+  static makeSha256Condition(preimage, json = true) {
+    const sha256Fulfillment = new _cryptoConditions.PreimageSha256();
+    sha256Fulfillment.setPreimage(_buffer.Buffer.from(preimage));
+    return json ? (0, _ccJsonify.default)(sha256Fulfillment) : sha256Fulfillment;
+  }
+  /**
+   * Create an Sha256 Threshold Cryptocondition from threshold to put into an Output of a Transaction
+   * @param {number} threshold
+   * @param {Array} [subconditions=[]]
+   * @param {boolean} [json=true] If true returns a json object otherwise a crypto-condition type
+   * @returns {Object} Sha256 Threshold Condition (that will need to wrapped in an Output)
+   */
+
+
+  static makeThresholdCondition(threshold, subconditions = [], json = true) {
+    const thresholdCondition = new _cryptoConditions.ThresholdSha256();
+    thresholdCondition.setThreshold(threshold);
+    (0, _forEach.default)(subconditions).call(subconditions, subcondition => {
+      // TODO: add support for Condition
+      thresholdCondition.addSubfulfillment(subcondition); // ? Should be thresholdCondition.addSubcondition(subcondition)
+    });
+    return json ? (0, _ccJsonify.default)(thresholdCondition) : thresholdCondition;
+  }
+  /**
+   * Generate a `TRANSFER` transaction holding the `asset`, `metadata`, and `outputs`, that fulfills
+   * the `fulfilledOutputs` of `unspentTransaction`.
+   * @param {Object} unspentTransaction Previous Transaction you have control over (i.e. can fulfill
+   *                                    its Output Condition)
+   * @param {Object} metadata Metadata for the Transaction
+   * @param {Object[]} outputs Array of Output objects to add to the Transaction.
+   *                           Think of these as the recipients of the asset after the transaction.
+   *                           For `TRANSFER` Transactions, this should usually just be a list of
+   *                           Outputs wrapping Ed25519 Conditions generated from the public keys of
+   *                           the recipients.
+   * @param {...number} OutputIndices Indices of the Outputs in `unspentTransaction` that this
+   *                                     Transaction fulfills.
+   *                                     Note that listed public keys listed must be used (and in
+   *                                     the same order) to sign the Transaction
+   *                                     (`signTransaction()`).
+   * @returns {Object} Unsigned transaction -- make sure to call signTransaction() on it before
+   *                   sending it off!
+   */
+  // TODO:
+  // - Make `metadata` optional argument
+
+
+  static makeTransferTransaction(unspentOutputs, outputs, metadata) {
+    const inputs = (0, _map.default)(unspentOutputs).call(unspentOutputs, unspentOutput => {
+      const {
+        tx,
+        outputIndex
+      } = {
+        tx: unspentOutput.tx,
+        outputIndex: unspentOutput.output_index
+      };
+      const fulfilledOutput = tx.outputs[outputIndex];
+      const transactionLink = {
+        output_index: outputIndex,
+        transaction_id: tx.id
+      };
+      return Transaction.makeInputTemplate(fulfilledOutput.public_keys, transactionLink);
+    });
+    const assetLink = {
+      id: unspentOutputs[0].tx.operation === 'CREATE' ? unspentOutputs[0].tx.id : unspentOutputs[0].tx.asset.id
+    };
+    return Transaction.makeTransaction('TRANSFER', assetLink, metadata, outputs, inputs);
+  }
+  /**
+   * Sign the given `transaction` with the given `privateKey`s, returning a new copy of `transaction`
+   * that's been signed.
+   * Note: Only generates Ed25519 Fulfillments. Thresholds and other types of Fulfillments are left as
+   * an exercise for the user.
+   * @param {Object} transaction Transaction to sign. `transaction` is not modified.
+   * @param {...string} privateKeys Private keys associated with the issuers of the `transaction`.
+   *                                Looped through to iteratively sign any Input Fulfillments found in
+   *                                the `transaction`.
+   * @returns {Object} The signed version of `transaction`.
+   */
+
+
+  static signTransaction(transaction, ...privateKeys) {
+    var _context2;
+
+    const signedTx = (0, _clone.default)(transaction);
+    const serializedTransaction = Transaction.serializeTransactionIntoCanonicalString(transaction);
+    (0, _forEach.default)(_context2 = signedTx.inputs).call(_context2, (input, index) => {
+      var _context3;
+
+      const privateKey = privateKeys[index];
+
+      const privateKeyBuffer = _bs.default.decode(privateKey);
+
+      const transactionUniqueFulfillment = input.fulfills ? (0, _concat.default)(_context3 = (0, _concat.default)(serializedTransaction).call(serializedTransaction, input.fulfills.transaction_id)).call(_context3, input.fulfills.output_index) : serializedTransaction;
+      const transactionHash = (0, _sha256Hash.default)(transactionUniqueFulfillment);
+      const ed25519Fulfillment = new _cryptoConditions.Ed25519Sha256();
+      ed25519Fulfillment.sign(_buffer.Buffer.from(transactionHash, 'hex'), privateKeyBuffer);
+      const fulfillmentUri = ed25519Fulfillment.serializeUri();
+      input.fulfillment = fulfillmentUri;
+    });
+    const serializedSignedTransaction = Transaction.serializeTransactionIntoCanonicalString(signedTx);
+    signedTx.id = (0, _sha256Hash.default)(serializedSignedTransaction);
+    return signedTx;
+  }
+  /**
+   * Delegate signing of the given `transaction` returning a new copy of `transaction`
+   * that's been signed.
+   * @param {Object} transaction Transaction to sign. `transaction` is not modified.
+   * @param {Function} signFn Function signing the transaction, expected to return the fulfillment.
+   * @returns {Object} The signed version of `transaction`.
+   */
+
+
+  static delegateSignTransaction(transaction, signFn) {
+    var _context4;
+
+    const signedTx = (0, _clone.default)(transaction);
+    const serializedTransaction = Transaction.serializeTransactionIntoCanonicalString(transaction);
+    (0, _forEach.default)(_context4 = signedTx.inputs).call(_context4, (input, index) => {
+      const fulfillmentUri = signFn(serializedTransaction, input, index);
+      input.fulfillment = fulfillmentUri;
+    });
+    const serializedSignedTransaction = Transaction.serializeTransactionIntoCanonicalString(signedTx);
+    signedTx.id = (0, _sha256Hash.default)(serializedSignedTransaction);
+    return signedTx;
+  }
+  /**
+  * Delegate signing of the given `transaction` returning a new copy of `transaction`
+  * that's been signed.
+  * @param {Object} transaction Transaction to sign. `transaction` is not modified.
+  * @param {Function} signFn Function signing the transaction, expected to resolve the fulfillment.
+  * @returns {Promise<Object>} The signed version of `transaction`.
+  */
+
+
+  static async delegateSignTransactionAsync(transaction, signFn) {
+    var _context5;
+
+    const signedTx = (0, _clone.default)(transaction);
+    const serializedTransaction = Transaction.serializeTransactionIntoCanonicalString(transaction);
+    await _promise.default.all((0, _map.default)(_context5 = signedTx.inputs).call(_context5, async (input, index) => {
+      const fulfillmentUri = await signFn(serializedTransaction, input, index);
+      input.fulfillment = fulfillmentUri;
+    }));
+    const serializedSignedTransaction = Transaction.serializeTransactionIntoCanonicalString(signedTx);
+    signedTx.id = (0, _sha256Hash.default)(serializedSignedTransaction);
+    return signedTx;
+  }
+
+}
+
+exports.default = Transaction;
